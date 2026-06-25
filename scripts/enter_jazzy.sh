@@ -40,10 +40,39 @@ free_serial_port() {
     ' 2>/dev/null || true
 }
 
+# ── Copy bc-stark-sdk into container (on-demand) ──────────────────────────
+_copy_bc_stark() {
+    # Auto-detect bc-stark-sdk on host
+    local sdk_dir=""
+    for d in \
+        "${BC_STARK_SDK_SRC}" \
+        "${HOME}/.local/lib/python3.10/site-packages" \
+        /usr/local/lib/python3.12/dist-packages \
+        /usr/lib/python3/dist-packages; do
+        if [ -d "${d}/bc_stark_sdk" ]; then
+            sdk_dir="${d}"
+            break
+        fi
+    done
+    if [ -z "${sdk_dir}" ]; then
+        echo "[jazzy] WARNING: bc-stark-sdk not found on host — hw_bridge will not work"
+        return 0
+    fi
+    echo "[jazzy] Copying bc-stark-sdk from ${sdk_dir}..."
+    docker cp "${sdk_dir}/bc_stark_sdk" \
+        "${CONTAINER_NAME}:/usr/local/lib/python3.12/dist-packages/bc_stark_sdk" 2>/dev/null || true
+    docker cp "${sdk_dir}/bc_stark_sdk-1.4.5.dist-info" \
+        "${CONTAINER_NAME}:/usr/local/lib/python3.12/dist-packages/bc_stark_sdk-1.4.5.dist-info" 2>/dev/null || true
+    docker cp "${sdk_dir}/bc_stark_sdk.libs" \
+        "${CONTAINER_NAME}:/usr/local/lib/python3.12/dist-packages/bc_stark_sdk.libs" 2>/dev/null || true
+}
+
 # ── Ensure container is running ─────────────────────────────────────────────
 ensure_container() {
     if docker ps --filter "name=${CONTAINER_NAME}" --format '{{.Names}}' 2>/dev/null | grep -q "^${CONTAINER_NAME}$"; then
         free_serial_port
+        # Always check bc-stark-sdk on entry (may have been lost on container restart)
+        docker exec "${CONTAINER_NAME}" python3 -c "import bc_stark_sdk" 2>/dev/null || _copy_bc_stark
         return 0
     fi
 
@@ -155,7 +184,7 @@ ensure_container() {
 }
 
 # ── Source ROS2 + workspace ─────────────────────────────────────────────────
-SOURCE_CMD="source /opt/ros/jazzy/setup.bash && source ${REVO_WS}/install/setup.bash && export LD_LIBRARY_PATH=/opt/ros/jazzy/lib:/opt/ros/jazzy/lib/x86_64-linux-gnu:\$LD_LIBRARY_PATH"
+SOURCE_CMD="source /opt/ros/jazzy/setup.bash && source ${REVO_WS}/install/setup.bash && export LD_LIBRARY_PATH=/opt/ros/jazzy/lib:/opt/ros/jazzy/lib/x86_64-linux-gnu:/usr/local/lib/python3.12/dist-packages/bc_stark_sdk.libs:\$LD_LIBRARY_PATH"
 
 # ── Main ────────────────────────────────────────────────────────────────────
 ensure_container
