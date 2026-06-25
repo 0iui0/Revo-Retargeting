@@ -55,6 +55,9 @@ ensure_container() {
         --privileged \
         --network host \
         --runtime nvidia \
+        --ulimit rtprio=99 \
+        --ulimit memlock=-1 \
+        --ulimit nproc=65536 \
         -v "${ISAAC_WS}:/workspaces/isaac_ros-dev" \
         -v /tmp/.X11-unix:/tmp/.X11-unix \
         -v /etc/localtime:/etc/localtime:ro \
@@ -84,6 +87,11 @@ ensure_container() {
         usermod -aG video,plugdev,sudo,dialout \${USERNAME} 2>/dev/null || true
     "
 
+    # ── DNS fix ─────────────────────────────────────────────────────
+    docker exec "${CONTAINER_NAME}" bash -c '
+        echo "nameserver 223.5.5.5" > /etc/resolv.conf
+    ' 2>/dev/null || true
+
     # ── Copy bc-stark-sdk ──────────────────────────────────────────────
     if [ -n "${BC_STARK_SRC}" ] && [ -d "${BC_STARK_SRC}" ]; then
         echo "[jazzy] Copying bc-stark-sdk from ${BC_STARK_SRC}..."
@@ -95,23 +103,51 @@ ensure_container() {
             "${CONTAINER_NAME}:/usr/local/lib/python3.12/dist-packages/bc_stark_sdk.libs" 2>/dev/null || true
     fi
 
-    # ── Install mujoco ─────────────────────────────────────────────────
+    # ── Copy Manus SDK ─────────────────────────────────────────────────
+    local manus_src="${MANUS_SDK_DIR:-${HOME}/Desktop/manus/ManusSDK_v3.1.1/ROS2/ManusSDK}"
+    if [ -d "${manus_src}" ]; then
+        echo "[jazzy] Copying Manus SDK..."
+        mkdir -p "${ISAAC_WS}/Revo-Retargeting/src/manus_ros2/ManusSDK/lib" 2>/dev/null || true
+        cp "${manus_src}/lib/libManusSDK.so" "${manus_src}/lib/libManusSDK_Integrated.so" \
+            "${ISAAC_WS}/Revo-Retargeting/src/manus_ros2/ManusSDK/lib/" 2>/dev/null || true
+        cp "${manus_src}/include/"*.h \
+            "${ISAAC_WS}/Revo-Retargeting/src/manus_ros2/ManusSDK/include/" 2>/dev/null || true
+    fi
+
+    # ── Install system ROS2 packages ───────────────────────────────────
+    docker exec "${CONTAINER_NAME}" bash -c '
+        echo "deb [trusted=yes] https://mirrors.aliyun.com/ros2/ubuntu noble main" > /etc/apt/sources.list.d/ros2-aliyun.list
+        apt-get update -qq 2>/dev/null || true
+
+        # Required for retarget + driver + ros2_control
+        pkgs="ros-jazzy-pinocchio ros-jazzy-controller-manager ros-jazzy-ros2-control ros-jazzy-ros2-controllers ros-jazzy-robot-state-publisher ros-jazzy-rmw-cyclonedds-cpp"
+        for pkg in $pkgs; do
+            if ! dpkg -l "$pkg" 2>/dev/null | grep -q "^ii"; then
+                echo "[jazzy] Installing $pkg..."
+                apt-get install -y -qq "$pkg" 2>/dev/null || true
+            fi
+        done
+
+        # Ensure ABI compatibility: upgrade packages that may conflict with Isaac ROS defaults
+        apt-get install -y -qq --only-upgrade \
+            ros-jazzy-diagnostic-updater ros-jazzy-diagnostic-msgs 2>/dev/null || true
+
+        rm /etc/apt/sources.list.d/ros2-aliyun.list 2>/dev/null || true
+        echo "[jazzy] ROS2 packages ready."
+    ' 2>/dev/null || true
+
+    # ── Install mujoco (pip, needs proxy) ───────────────────────────────
     local proxy_opts=""
     [ -n "${HTTP_PROXY:-}" ] && proxy_opts="-e HTTP_PROXY=${HTTP_PROXY} -e HTTPS_PROXY=${HTTPS_PROXY:-${HTTP_PROXY}}"
-    docker exec ${proxy_opts} "${CONTAINER_NAME}" \
-        pip3 install --break-system-packages mujoco \
-        -i https://pypi.tuna.tsinghua.edu.cn/simple/ 2>/dev/null || true
+    docker exec ${proxy_opts} "${CONTAINER_NAME}" bash -c '
+        pip3 install --break-system-packages mujoco -i https://pypi.tuna.tsinghua.edu.cn/simple/ 2>/dev/null
+    ' 2>/dev/null || true
 
-    # ── Install Pinocchio (for C++ retarget) ────────────────────────────
+    # ── Fix serial port permissions ─────────────────────────────────────
     docker exec "${CONTAINER_NAME}" bash -c '
-        if ! dpkg -l ros-jazzy-pinocchio 2>/dev/null | grep -q "^ii"; then
-            echo "[jazzy] Installing Pinocchio..."
-            echo "deb [trusted=yes] https://mirrors.aliyun.com/ros2/ubuntu noble main" > /etc/apt/sources.list.d/ros2-aliyun.list
-            apt-get update -qq 2>/dev/null
-            apt-get install -y -qq ros-jazzy-pinocchio 2>/dev/null
-            rm /etc/apt/sources.list.d/ros2-aliyun.list 2>/dev/null || true
-            echo "[jazzy] Pinocchio installed."
-        fi
+        for dev in /dev/ttyUSB0 /dev/ttyUSB1; do
+            [ -e "$dev" ] && chmod 666 "$dev" 2>/dev/null || true
+        done
     ' 2>/dev/null || true
 
     echo "[jazzy] Container ready."
