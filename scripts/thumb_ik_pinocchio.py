@@ -6,8 +6,13 @@ import pinocchio as pin
 from pathlib import Path
 
 # ── URDF path ────────────────────────────────────────────────────────────────
-_URDF_DIR = Path("/workspaces/isaac_ros-dev/Revo-Retargeting/src/revo3_description/urdf")
+# Primary: brainco_revo3_ros2 submodule (official URDF)
+_URDF_DIR = Path("/workspaces/isaac_ros-dev/Revo-Retargeting/src/brainco_revo3_ros2/revo3_description/urdf")
+# Fallback: legacy path
+_URDF_DIR_FALLBACK = Path("/workspaces/isaac_ros-dev/Revo-Retargeting/src/revo3_description/urdf")
 URDF_RIGHT = str(_URDF_DIR / "revo3_right_may3.urdf")
+if not Path(URDF_RIGHT).exists():
+    URDF_RIGHT = str(_URDF_DIR_FALLBACK / "revo3_right_may3.urdf")
 
 # ── Manus keypoint node IDs ──────────────────────────────────────────────────
 THUMB_TIP_NODE = 4
