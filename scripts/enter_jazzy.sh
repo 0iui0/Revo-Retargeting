@@ -155,7 +155,7 @@ ensure_container() {
 }
 
 # ── Source ROS2 + workspace ─────────────────────────────────────────────────
-SOURCE_CMD="source /opt/ros/jazzy/setup.bash && source ${REVO_WS}/install/setup.bash && export LD_LIBRARY_PATH=/opt/ros/jazzy/lib:\$LD_LIBRARY_PATH"
+SOURCE_CMD="source /opt/ros/jazzy/setup.bash && source ${REVO_WS}/install/setup.bash && export LD_LIBRARY_PATH=/opt/ros/jazzy/lib:/opt/ros/jazzy/lib/x86_64-linux-gnu:\$LD_LIBRARY_PATH"
 
 # ── Main ────────────────────────────────────────────────────────────────────
 ensure_container
