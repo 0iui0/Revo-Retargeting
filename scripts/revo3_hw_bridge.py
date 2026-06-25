@@ -37,16 +37,19 @@ def _baudrate_from_int(sdk, value: int):
 
 class Revo3HWBridge(Node):
     def __init__(self, hand: str = "right", port: str = "/dev/ttyUSB1",
-                 slave_id: int = 127, baudrate: int = 5000000):
+                 slave_id: int = 127, baudrate: int = 5000000,
+                 ema_smoothing: float = 0.3):
         super().__init__("revo3_hw_bridge")
         self._port = port
         self._slave_id = slave_id
         self._baudrate = baudrate
+        self._ema_smoothing = ema_smoothing  # 0.0 = no filter, 0.3 = moderate, 0.5 = heavy
         self._device = None
         self._sdk = None
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._connected = threading.Event()
         self._pending_positions: Optional[list] = None
+        self._filtered_positions: Optional[list] = None  # EMA filtered
         self._lock = threading.Lock()
         self._cmd_count = 0
         self._last_log = 0.0
@@ -110,10 +113,17 @@ class Revo3HWBridge(Node):
                 positions = self._pending_positions
                 self._pending_positions = None
             if positions is not None:
+                # EMA low-pass filter on motor positions
+                if self._filtered_positions is None:
+                    self._filtered_positions = list(positions)
+                else:
+                    a = self._ema_smoothing
+                    for i in range(len(positions)):
+                        self._filtered_positions[i] = (1.0 - a) * self._filtered_positions[i] + a * positions[i]
                 try:
-                    await self._send_mit(positions)
+                    await self._send_mit(self._filtered_positions)
                 except Exception:
-                    pass  # logged in _send_mit
+                    pass
             await asyncio.sleep(0.001)
 
     async def _send_mit(self, positions_deg: list):
@@ -158,12 +168,15 @@ def main():
     parser.add_argument("--port", default="/dev/ttyUSB1")
     parser.add_argument("--slave-id", type=int, default=127)
     parser.add_argument("--baudrate", type=int, default=5000000)
+    parser.add_argument("--smoothing", type=float, default=0.3,
+                        help="EMA smoothing factor (0=off, 0.3=moderate, 0.5=heavy)")
     args = parser.parse_args()
 
     rclpy.init()
     node = Revo3HWBridge(
         hand=args.hand, port=args.port,
         slave_id=args.slave_id, baudrate=args.baudrate,
+        ema_smoothing=args.smoothing,
     )
     try:
         rclpy.spin(node)
