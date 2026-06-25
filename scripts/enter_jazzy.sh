@@ -133,6 +133,7 @@ ensure_container() {
             ros-jazzy-diagnostic-updater ros-jazzy-diagnostic-msgs 2>/dev/null || true
 
         rm /etc/apt/sources.list.d/ros2-aliyun.list 2>/dev/null || true
+        ldconfig 2>/dev/null || true
         echo "[jazzy] ROS2 packages ready."
     ' 2>/dev/null || true
 
@@ -154,7 +155,7 @@ ensure_container() {
 }
 
 # ── Source ROS2 + workspace ─────────────────────────────────────────────────
-SOURCE_CMD="source /opt/ros/jazzy/setup.bash && source ${REVO_WS}/install/setup.bash"
+SOURCE_CMD="source /opt/ros/jazzy/setup.bash && source ${REVO_WS}/install/setup.bash && export LD_LIBRARY_PATH=/opt/ros/jazzy/lib:\$LD_LIBRARY_PATH"
 
 # ── Main ────────────────────────────────────────────────────────────────────
 ensure_container
