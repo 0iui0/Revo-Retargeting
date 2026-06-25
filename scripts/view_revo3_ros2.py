@@ -235,17 +235,17 @@ def retarget_manus_to_motor(ergo: dict) -> list[float]:
     def erg(name, default=0.0):
         return float(ergo.get(name, default))
 
-    # ── Spread (MPR) — MiddleSpread-relative (matches spread_retarget.cpp) ──
-    # Right-hand params: middle_dynamic=true, finger_spread_sign=-1.0
-    # offsets: index=15°, middle=-5°, ring=-5°, pinky=0°
+    # ── Spread (MPR) — MiddleSpread-relative (matches spread_retarget.cpp + DV1 tuning) ──
+    # DV1 tuning params: middle_dynamic=true, finger_spread_sign=-1.0
+    # offsets: index=0°, middle=-10°, ring=0°, pinky=0°
     FINGER_SPREAD_SIGN = -1.0
     middle_ref = erg("MiddleSpread", 0.0)
     middle_dynamic = True
-    middle_offset = -5.0
+    middle_offset = -10.0
 
-    index_val = (erg("IndexSpread", 0.0) - middle_ref - 15.0) * 1.0
+    index_val = (erg("IndexSpread", 0.0) - middle_ref - 0.0) * 1.0
     middle_val = (middle_ref - middle_offset) * 1.0 if middle_dynamic else -middle_offset
-    ring_val = (erg("RingSpread", 0.0) - middle_ref - (-5.0)) * 1.0
+    ring_val = (erg("RingSpread", 0.0) - middle_ref - 0.0) * 1.0
     # ring asymmetric scaling (forward/backward)
     if ring_val > 0.0:
         ring_val *= 1.0   # ring_forward_scale
