@@ -24,6 +24,7 @@ import numpy as np
 import rclpy
 from rclpy.node import Node
 from manus_ros2_msgs.msg import ManusGlove
+from sensor_msgs.msg import JointState
 
 # Optional: old Stark SDK motor topic (may not exist in official build)
 try:
@@ -333,6 +334,10 @@ class Revo3Viewer(Node):
         if _has_stark_msgs:
             self.create_subscription(SetMotorMulti, f"/revo3/{hand}/set_motor_multi", self._on_motor, 10)
 
+        # Publish joint_states so RViz can visualize
+        self._joint_state_pub = self.create_publisher(
+            JointState, f"/revo3_{hand}/revo3_joint_state/joint_states", 10)
+
         self._motor_pos: Optional[np.ndarray] = None  # from retarget_node (preferred)
         self._local_motor: Optional[np.ndarray] = None  # local retarget (fallback)
         self._last_ergo: dict = {}
@@ -381,6 +386,21 @@ class Revo3Viewer(Node):
             # Position is in radians — convert to degrees for viewer
             self._motor_pos = np.rad2deg(np.array(msg.position[:21], dtype=float))
 
+    def _publish_joint_states(self):
+        """Publish current MJCF joint positions as JointState for RViz."""
+        js = JointState()
+        js.header.stamp = self.get_clock().now().to_msg()
+        js.name = JOINT_NAMES
+        positions_rad = []
+        for i, jn in enumerate(JOINT_NAMES):
+            adr = self._adr[i] if i < len(self._adr) else -1
+            if adr >= 0:
+                positions_rad.append(float(self._data.qpos[adr]))
+            else:
+                positions_rad.append(0.0)
+        js.position = positions_rad
+        self._joint_state_pub.publish(js)
+
     def spin(self):
         self.get_logger().info("Launching MuJoCo viewer...")
         with mujoco.viewer.launch_passive(self._model, self._data) as v:
@@ -402,6 +422,10 @@ class Revo3Viewer(Node):
 
                 mujoco.mj_forward(self._model, self._data)
                 self._skel.render(v.user_scn)
+
+                # Publish joint states for RViz
+                self._publish_joint_states()
+
                 v.sync()
 
                 now = time.time()
