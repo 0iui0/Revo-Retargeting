@@ -5,7 +5,7 @@
 # Usage:
 #   ./scripts/enter_jazzy.sh -- bash scripts/view_rviz.sh right
 #   ./scripts/enter_jazzy.sh -- bash scripts/view_rviz.sh left
-set -euo pipefail
+set -eo pipefail
 
 SIDE="${1:-right}"
 WS="/workspaces/isaac_ros-dev/Revo-Retargeting"
