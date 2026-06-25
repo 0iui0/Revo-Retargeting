@@ -1,0 +1,142 @@
+--- /tmp/orig_mit.cpp	2026-06-25 13:58:35.211627134 +0800
++++ /home/zpa/workspace/Revo-Retargeting/src/brainco_revo3_ros2/revo3_mit_controller/src/revo3_mit_controller.cpp	2026-06-25 13:59:56.388036569 +0800
+@@ -7,6 +7,7 @@
+ 
+ #include <algorithm>
+ #include <mutex>
++#include <set>
+ #include <string>
+ #include <unordered_map>
+ #include <vector>
+@@ -40,13 +41,19 @@
+   {
+     controller_interface::InterfaceConfiguration config;
+     config.type = controller_interface::interface_configuration_type::INDIVIDUAL;
+-    for (const auto & joint_name : joint_names_)
+-    {
+-      config.names.push_back(joint_name + "/" + hardware_interface::HW_IF_POSITION);
+-      config.names.push_back(joint_name + "/" + hardware_interface::HW_IF_VELOCITY);
+-      config.names.push_back(joint_name + "/" + hardware_interface::HW_IF_EFFORT);
+-      config.names.push_back(joint_name + "/kp");
+-      config.names.push_back(joint_name + "/kd");
++
++    // Jazzy compat: if joints not yet known (parameter loading quirk),
++    // claim ALL available MIT command interfaces.
++    if (!joint_names_.empty()) {
++      for (const auto & joint_name : joint_names_) {
++        config.names.push_back(joint_name + "/" + hardware_interface::HW_IF_POSITION);
++        config.names.push_back(joint_name + "/" + hardware_interface::HW_IF_VELOCITY);
++        config.names.push_back(joint_name + "/" + hardware_interface::HW_IF_EFFORT);
++        config.names.push_back(joint_name + "/kp");
++        config.names.push_back(joint_name + "/kd");
++      }
++    } else {
++      config.type = controller_interface::interface_configuration_type::ALL;
+     }
+     return config;
+   }
+@@ -55,9 +62,13 @@
+   {
+     controller_interface::InterfaceConfiguration config;
+     config.type = controller_interface::interface_configuration_type::INDIVIDUAL;
+-    for (const auto & joint_name : joint_names_)
+-    {
+-      config.names.push_back(joint_name + "/" + hardware_interface::HW_IF_POSITION);
++
++    if (!joint_names_.empty()) {
++      for (const auto & joint_name : joint_names_) {
++        config.names.push_back(joint_name + "/" + hardware_interface::HW_IF_POSITION);
++      }
++    } else {
++      config.type = controller_interface::interface_configuration_type::ALL;
+     }
+     return config;
+   }
+@@ -71,32 +82,70 @@
+     command_timeout_sec_ = get_node()->get_parameter("command_timeout_sec").as_double();
+     hold_position_on_timeout_ = get_node()->get_parameter("hold_position_on_timeout").as_bool();
+ 
+-    if (joint_names_.empty())
+-    {
+-      RCLCPP_ERROR(get_node()->get_logger(), "Parameter 'joints' must not be empty");
+-      return CallbackReturn::ERROR;
+-    }
+-
+-    joint_index_.clear();
+-    for (std::size_t i = 0; i < joint_names_.size(); ++i)
+-    {
+-      joint_index_[joint_names_[i]] = i;
++    // Jazzy compat: if joints param is empty (parameter loading quirk),
++    // defer joint detection to on_activate() where claimed interfaces are available.
++    if (!joint_names_.empty())
++    {
++      joint_index_.clear();
++      for (std::size_t i = 0; i < joint_names_.size(); ++i)
++      {
++        joint_index_[joint_names_[i]] = i;
++      }
++      command_position_.assign(joint_names_.size(), 0.0);
++      command_velocity_.assign(joint_names_.size(), 0.0);
++      command_effort_.assign(joint_names_.size(), default_effort_);
++      command_kp_.assign(joint_names_.size(), default_kp_);
++      command_kd_.assign(joint_names_.size(), default_kd_);
+     }
+ 
+-    command_position_.assign(joint_names_.size(), 0.0);
+-    command_velocity_.assign(joint_names_.size(), 0.0);
+-    command_effort_.assign(joint_names_.size(), default_effort_);
+-    command_kp_.assign(joint_names_.size(), default_kp_);
+-    command_kd_.assign(joint_names_.size(), default_kd_);
+     has_command_ = false;
+-
+     RCLCPP_INFO(
+-      get_node()->get_logger(), "Revo3MITController configured with %zu joints", joint_names_.size());
++      get_node()->get_logger(), "Revo3MITController configured (%zu joints from param, "
++      "%zu will be detected from interfaces if 0)",
++      joint_names_.size(), joint_names_.empty() ? command_interfaces_.size() / 5 : 0);
+     return CallbackReturn::SUCCESS;
+   }
+ 
+   controller_interface::CallbackReturn on_activate(const rclcpp_lifecycle::State &) override
+   {
++    // Jazzy compat: auto-detect joint names from claimed command interfaces
++    if (joint_names_.empty())
++    {
++      std::set<std::string> detected;
++      for (const auto & iface : command_interfaces_)
++      {
++        const auto & name = iface.get_name();
++        auto slash = name.find('/');
++        if (slash != std::string::npos)
++        {
++          detected.insert(name.substr(0, slash));
++        }
++      }
++      joint_names_.assign(detected.begin(), detected.end());
++      std::sort(joint_names_.begin(), joint_names_.end());
++
++      if (joint_names_.empty())
++      {
++        RCLCPP_ERROR(get_node()->get_logger(),
++          "No command interfaces claimed — cannot auto-detect joints");
++        return CallbackReturn::ERROR;
++      }
++
++      joint_index_.clear();
++      for (std::size_t i = 0; i < joint_names_.size(); ++i)
++      {
++        joint_index_[joint_names_[i]] = i;
++      }
++      command_position_.assign(joint_names_.size(), 0.0);
++      command_velocity_.assign(joint_names_.size(), 0.0);
++      command_effort_.assign(joint_names_.size(), default_effort_);
++      command_kp_.assign(joint_names_.size(), default_kp_);
++      command_kd_.assign(joint_names_.size(), default_kd_);
++
++      RCLCPP_INFO(get_node()->get_logger(),
++        "Auto-detected %zu joints from command interfaces", joint_names_.size());
++    }
++
+     if (command_interfaces_.size() != joint_names_.size() * 5 ||
+       state_interfaces_.size() != joint_names_.size())
+     {
