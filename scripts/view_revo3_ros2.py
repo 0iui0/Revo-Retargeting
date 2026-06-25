@@ -44,16 +44,19 @@ except ImportError:
 
 
 # ── MJCF path ────────────────────────────────────────────────────────────────
-_BRAINCO_MJCF = "/workspaces/brainco-description/revo3_system/mjcf/revo3_right.xml"
-_FALLBACK_MJCF = "/workspaces/isaac_ros-dev/Revo-Retargeting/src/revo3_description/revo3_right_urdf/mujoco_xml/revo3_right_urdf_from_urdf.xml"
+_MJCF_CANDIDATES = [
+    "/workspaces/brainco-description/revo3_system/mjcf/revo3_right.xml",
+    "/workspaces/isaac_ros-dev/brainco-description/revo3_system/mjcf/revo3_right.xml",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "revo3_right.xml"),
+]
 
-if os.path.exists(_BRAINCO_MJCF):
-    MJCF_PATH = Path(_BRAINCO_MJCF)
-else:
-    MJCF_PATH = Path(_FALLBACK_MJCF)
-    if not MJCF_PATH.exists():
-        base = Path(__file__).resolve().parents[1]
-        MJCF_PATH = base / "src/revo3_description/revo3_right_urdf/mujoco_xml/revo3_right_urdf_from_urdf.xml"
+MJCF_PATH = None
+for p in _MJCF_CANDIDATES:
+    if os.path.exists(p):
+        MJCF_PATH = Path(p)
+        break
+if MJCF_PATH is None:
+    raise FileNotFoundError(f"No MJCF found. Tried: {_MJCF_CANDIDATES}")
 
 
 # ── Manus → MuJoCo coordinate transform ─────────────────────────────────────
@@ -334,9 +337,17 @@ class Revo3Viewer(Node):
         if _has_stark_msgs:
             self.create_subscription(SetMotorMulti, f"/revo3/{hand}/set_motor_multi", self._on_motor, 10)
 
-        # Publish joint_states so RViz can visualize
+        # Publish joint_states and robot_description so RViz can visualize
         self._joint_state_pub = self.create_publisher(
             JointState, f"/revo3_{hand}/revo3_joint_state/joint_states", 10)
+
+        # Publish robot_description for robot_state_publisher
+        try:
+            from std_msgs.msg import String
+            self._desc_pub = self.create_publisher(String, f"/revo3_{hand}/robot_description", 1)
+            self._publish_robot_description(hand)
+        except Exception:
+            pass
 
         self._motor_pos: Optional[np.ndarray] = None  # from retarget_node (preferred)
         self._local_motor: Optional[np.ndarray] = None  # local retarget (fallback)

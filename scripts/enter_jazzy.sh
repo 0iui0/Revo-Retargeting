@@ -88,6 +88,7 @@ ensure_container() {
         --ulimit memlock=-1 \
         --ulimit nproc=65536 \
         -v "${ISAAC_WS}:/workspaces/isaac_ros-dev" \
+        -v "${ISAAC_WS}/brainco-description:/workspaces/brainco-description" \
         -v /tmp/.X11-unix:/tmp/.X11-unix \
         -v /etc/localtime:/etc/localtime:ro \
         -e DISPLAY="${DISPLAY:-}" \
